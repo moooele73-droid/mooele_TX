@@ -2,7 +2,7 @@
 <html lang="zh-Hant-TW">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
 <title>我的股票紀錄</title>
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
@@ -64,12 +64,14 @@ figure{margin:0;border:1px solid var(--line);border-radius:16px;padding:18px;bac
 figcaption{font-size:16px;font-weight:700}
 .fh{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:baseline;gap:8px}
 .lg{display:flex;gap:14px;font-size:13px;color:var(--muted)} .lg span{display:inline-flex;align-items:center;gap:6px} .sw{width:12px;height:12px;border-radius:3px;display:inline-block}
-.plrow{display:grid;grid-template-columns:minmax(90px,130px) 1fr 1fr 90px;align-items:center;min-height:36px;border-radius:6px}
+.plrow{display:grid;grid-template-columns:minmax(90px,130px) minmax(0,1fr) minmax(0,1fr) 90px;align-items:center;min-height:36px;border-radius:8px}
 .plrow:hover,.plrow:focus{background:#EAF3F1;outline:none}
 .plrow .n{font-size:14px;padding-left:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .plrow .neg{display:flex;justify-content:flex-end}.plrow .pos{display:flex;border-left:1px solid #B9AE9F}
 .plrow .v{font-size:14px;font-weight:600;text-align:right;padding-right:6px}
-.wrow{display:grid;grid-template-columns:minmax(90px,130px) 1fr 60px;gap:10px;align-items:center}
+.wrow{display:grid;grid-template-columns:minmax(0,1fr) auto;column-gap:12px;row-gap:4px;align-items:center}
+.wrow>:first-child{grid-column:1/-1;font-size:14px}
+.wrow>:last-child{min-width:64px;text-align:right}
 .months{display:flex;gap:12px;min-height:230px}
 .mcol{flex:0 0 68px;display:flex;flex-direction:column;align-items:center;font-size:13px}
 .mcol .h{height:90px;width:100%;display:flex;justify-content:center}
@@ -83,6 +85,32 @@ figcaption{font-size:16px;font-weight:700}
 .back{border:0;background:transparent;color:var(--blue);font-weight:600;padding:0 8px 0 0;display:inline-flex;align-items:center;gap:4px}
 .dhead{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px;padding:12px 16px;border-bottom:1px solid var(--line)}
 :focus-visible{outline:2px solid var(--blue);outline-offset:1px}
+/* 防止頁面左右滑出 */
+html,body{max-width:100%;overflow-x:hidden}
+@supports (overflow:clip){html,body{overflow-x:clip}}
+main,section,figure,.panel,.card,.pad,.cards>*,.grid2>*,.row>*{min-width:0}
+.scroll{max-width:100%;position:relative}
+.sr{position:absolute!important;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.card .v{overflow-wrap:anywhere}
+img,svg{max-width:100%}
+@media (max-width:560px){
+ .plrow{grid-template-columns:minmax(0,1fr) minmax(0,1fr) auto;row-gap:2px;padding:6px 0}
+ .plrow .n{grid-column:1/-1;white-space:normal;padding-left:2px}
+ .plrow .v{min-width:84px}
+ .wrap{padding:0 12px}
+ .pad{padding:14px}
+ figure{padding:14px}
+ .cards{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+ .card{padding:14px}
+ .card .v{font-size:19px}
+ .row>label{flex:1 1 140px}
+ .row>label input,.row>label select{width:100%}
+ .bar{padding:10px 12px}
+ .tabs{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:2px;width:100%}
+ .tabs button{padding:0 4px;font-size:14px;white-space:nowrap}
+ .tabs .cnt{display:none}
+ .bar>.row{width:100%;justify-content:flex-end}
+}
 </style>
 </head>
 <body>
@@ -197,7 +225,7 @@ function tradesHTML(){
   if(!list.length)return `<p class="empty">${ui.edit?'還沒有紀錄，按「新增一列」開始記帳。':'這個篩選條件下沒有紀錄。'}</p>`;
   const net=t=>{const q=num(t.qty),p=num(t.price),f=fee(q,p),x=tax(q,p,t.side);return t.side==='buy'?-(q*p+f):q*p-f-x};
   if(!ui.edit){
-    return `<div class="scroll"><table style="min-width:1000px"><thead><tr><th class="l">日期</th><th class="l">股票</th><th class="c">買賣</th><th>股數</th><th>成交價</th><th>手續費</th><th>證交稅</th><th>淨收付</th><th>利潤</th><th class="l">券商</th><th><span class="sr" style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)">操作</span></th></tr></thead><tbody>
+    return `<div class="scroll"><table style="min-width:1000px"><thead><tr><th class="l">日期</th><th class="l">股票</th><th class="c">買賣</th><th>股數</th><th>成交價</th><th>手續費</th><th>證交稅</th><th>淨收付</th><th>利潤</th><th class="l">券商</th><th><span class="sr">操作</span></th></tr></thead><tbody>
     ${list.map(t=>{const q=num(t.qty),p=num(t.price),x=tax(q,p,t.side);return `<tr><td style="color:var(--ink2)">${esc(t.date)}</td><td class="l"><button type="button" class="stk" style="min-height:32px;padding:0" data-stock="${esc(t.code)}" aria-label="查看 ${esc(t.code)} ${esc(t.name)} 的交易明細"><span class="b">${esc(t.code)}</span><span style="color:var(--ink2)">${esc(t.name)}</span></button></td>
      <td class="c"><span class="tag ${t.side}">${t.side==='buy'?'買進':'賣出'}</span></td><td>${fmt(q)}</td><td>${fmt(p,2)}</td><td style="color:var(--ink2)">${fmt(fee(q,p))}</td><td style="color:var(--ink2)">${x?fmt(x):'—'}</td><td class="b">${signed(net(t))}</td>
      <td class="b" style="color:${t.profit!==undefined&&t.profit!==''?tone(num(t.profit)):'var(--ink2)'}">${t.profit!==undefined&&t.profit!==''?signed(num(t.profit)):'—'}</td>
@@ -205,7 +233,7 @@ function tradesHTML(){
      <td style="padding:4px 12px"><button type="button" class="del" data-act="del" data-id="${t.id}" aria-label="刪除 ${esc(t.date)} ${esc(t.name)} 的紀錄">${trash}</button></td></tr>`}).join('')}
     </tbody></table></div>`;
   }
-  return `<div class="scroll"><table class="edit" style="min-width:1180px"><thead><tr><th class="l">日期</th><th class="l">代號</th><th class="l">名稱</th><th class="l">買賣</th><th>股數</th><th>成交價</th><th>利潤（賣出）</th><th class="l">券商</th><th>淨收付（含費稅）</th><th><span style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)">操作</span></th></tr></thead><tbody>
+  return `<div class="scroll"><table class="edit" style="min-width:1180px"><thead><tr><th class="l">日期</th><th class="l">代號</th><th class="l">名稱</th><th class="l">買賣</th><th>股數</th><th>成交價</th><th>利潤（賣出）</th><th class="l">券商</th><th>淨收付（含費稅）</th><th><span class="sr">操作</span></th></tr></thead><tbody>
   ${list.map(t=>{const ok=valid(t);return `<tr class="${ok?'':'incomplete'}" data-row="${t.id}">
    <td><input type="date" aria-label="日期" data-e="date" value="${esc(t.date)}" style="min-width:140px"></td>
    <td><input type="text" inputmode="numeric" aria-label="代號" data-e="code" placeholder="2330" value="${esc(t.code)}" style="width:90px;font-weight:600"></td>
@@ -304,7 +332,7 @@ function dividendsHTML(c){
   </div>
   ${years.map(y=>{const yl=list.filter(d=>d.date.startsWith(y)),ys=yl.reduce((a,d)=>a+num(d.amount),0);
    return `<div style="padding:10px 16px;background:var(--soft);border-top:1px solid var(--line);display:flex;justify-content:space-between;font-weight:600"><span>${y} 年</span><span style="font-size:14px">合計 <span style="color:var(--up)">${signed(ys)}</span></span></div>
-   <div class="scroll"><table style="min-width:720px"><thead><tr><th class="l">發放日</th><th class="l">股票</th><th>每股配息</th><th>參與股數</th><th>實領金額</th><th class="l">券商／備註</th><th><span style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)">操作</span></th></tr></thead><tbody>
+   <div class="scroll"><table style="min-width:720px"><thead><tr><th class="l">發放日</th><th class="l">股票</th><th>每股配息</th><th>參與股數</th><th>實領金額</th><th class="l">券商／備註</th><th><span class="sr">操作</span></th></tr></thead><tbody>
    ${yl.map(d=>`<tr><td style="color:var(--ink2)">${esc(d.date)}</td><td class="l"><button type="button" class="stk" style="min-height:32px;padding:0" data-stock="${esc(String(d.code).trim())}"><span class="b">${esc(d.code)}</span><span style="color:var(--ink2)">${esc(d.name||'')}</span></button></td>
     <td>${d.per!==''&&d.per!=null?esc(d.per):'—'}</td><td>${num(d.shares)?fmt(num(d.shares)):'—'}</td><td class="b" style="color:var(--up)">${signed(num(d.amount))}</td><td class="l" style="color:var(--ink2)">${esc(d.broker||'')}</td>
     <td style="padding:4px 12px"><button type="button" class="del" data-act="ddel" data-id="${d.id}" aria-label="刪除 ${esc(d.date)} ${esc(d.name||d.code)} 的配息">${trash}</button></td></tr>`).join('')}
@@ -361,7 +389,7 @@ function render(){
   <section class="panel" aria-label="持股與交易"${ui.detail?' hidden':''}>
    <div class="bar"><div class="tabs" role="tablist">
      <button type="button" role="tab" data-tab="holdings" aria-selected="${t==='holdings'}">目前持股</button>
-     <button type="button" role="tab" data-tab="trades" aria-selected="${t==='trades'}">交易紀錄（${data.trades.length}）</button>
+     <button type="button" role="tab" data-tab="trades" aria-selected="${t==='trades'}">交易紀錄<span class="cnt">（${data.trades.length}）</span></button>
      <button type="button" role="tab" data-tab="dividends" aria-selected="${t==='dividends'}">配息</button>
      <button type="button" role="tab" data-tab="analysis" aria-selected="${t==='analysis'}">損益分析</button></div>
     <div class="row" style="align-items:center">
