@@ -82,7 +82,9 @@ figcaption{font-size:16px;font-weight:700}
 .back{border:0;background:transparent;color:var(--blue);font-weight:600;padding:0 8px 0 0;display:inline-flex;align-items:center;gap:4px}
 .dhead{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px;padding:12px 16px;border-bottom:1px solid var(--line)}
 :focus-visible{outline:2px solid var(--blue);outline-offset:1px}
-input[type=date]{display:block;line-height:42px;text-align:left}
+input[type=date]{display:block;line-height:42px;text-align:left;width:100%;max-width:100%;min-width:0;height:44px;padding:0 12px;-webkit-appearance:none;appearance:none;background:#fff}
+input[type=date]::-webkit-date-and-time-value{display:block;text-align:left;margin:0;padding:0;line-height:42px;height:42px}
+input[type=date]::-webkit-datetime-edit{padding:0}
 input[type=date]::-webkit-date-and-time-value{text-align:left;margin:0}
 input[type=date]::-webkit-calendar-picker-indicator{opacity:.6}
 select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' fill='none' stroke='%237A7268' stroke-width='2'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 10px center;padding-right:28px}
@@ -118,8 +120,12 @@ img,svg{max-width:100%}
  .cards{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
  .card{padding:14px}
  .card .v{font-size:19px}
- .row>label{flex:1 1 140px}
- .row>label input,.row>label select{width:100%}
+ .frm{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px 10px;align-items:end}
+ .frm>*{min-width:0;width:100%}
+ .frm>label{display:grid;grid-template-rows:auto 44px;gap:4px}
+ .frm input,.frm select{width:100%!important;max-width:100%;min-width:0}
+ .frm .seg{width:100%}.frm .seg button{flex:1}
+ .frm>.btn{width:100%}
  .bar{padding:10px 12px}
  .tabs{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:2px;width:100%}
  .tabs button{padding:0 4px;font-size:14px;white-space:nowrap}
@@ -149,7 +155,7 @@ if(!data||!Array.isArray(data.trades)){data=JSON.parse(JSON.stringify(INITIAL));
   try{const old=JSON.parse(localStorage.getItem(OLDKEY));if(old&&!old.sample&&Array.isArray(old.trades)){old.trades.forEach(t=>{t.id=data.nextId++;data.trades.push(t)});Object.assign(data.prices,old.prices||{})}}catch(e){}
   try{localStorage.setItem(KEY,JSON.stringify(data))}catch(e){}}
 if(!Array.isArray(data.dividends))data.dividends=[];if(!data.nextDivId)data.nextDivId=Math.max(0,...data.dividends.map(d=>d.id||0))+1;
-const ui={dform:{date:today(),code:'',name:'',per:'',shares:'',amount:'',broker:'',sharesTouched:false,amountTouched:false},derr:'',detail:null,tab:'holdings',filter:'all',edit:false,error:'',form:{side:'buy',date:today(),code:'',name:'',qty:'',price:''}};
+const ui={dedit:false,dform:{date:today(),code:'',name:'',per:'',shares:'',amount:'',broker:'',sharesTouched:false,amountTouched:false},derr:'',detail:null,tab:'holdings',filter:'all',edit:false,error:'',form:{side:'buy',date:today(),code:'',name:'',qty:'',price:''}};
 function save(){try{localStorage.setItem(KEY,JSON.stringify(data))}catch(e){}}
 
 const num=v=>{const n=Number(v);return isFinite(n)?n:0};
@@ -206,7 +212,7 @@ function summaryHTML(c){
 function formHTML(){
   const f=ui.form,ok=num(f.qty)>0&&num(f.price)>0,b=f.side==='buy';
   return `<section class="panel pad" aria-labelledby="addt"><h2 id="addt">新增一筆交易</h2>
-  <div class="row">
+  <div class="row frm">
    <div><div style="font-size:13px;color:var(--ink2);margin-bottom:4px">買賣</div><div class="seg">
     <button type="button" data-act="side" data-v="buy" aria-pressed="${b}" style="${b?'background:var(--up);color:#fff':''}">買進</button>
     <button type="button" data-act="side" data-v="sell" aria-pressed="${!b}" style="${!b?'background:var(--down);color:#fff':''}">賣出</button></div></div>
@@ -315,13 +321,13 @@ function detailHTML(code,c){
 
 function dividendsHTML(c){
   const f=ui.dform;
-  const list=data.dividends.filter(divOk).slice().sort((a,b)=>b.date.localeCompare(a.date)||b.id-a.id);
-  const years=[...new Set(list.map(d=>d.date.slice(0,4)))];
+  const list=data.dividends.filter(d=>ui.dedit||divOk(d)).slice().sort((a,b)=>String(b.date).localeCompare(String(a.date))||b.id-a.id);
+  const years=[...new Set(list.map(d=>String(d.date).slice(0,4)))];
   const byStock={};list.forEach(d=>{const k=String(d.code).trim();(byStock[k]=byStock[k]||{code:k,name:d.name||nameOf(k),sum:0,n:0});byStock[k].sum+=num(d.amount);byStock[k].n++});
   const ranks=Object.values(byStock).sort((a,b)=>b.sum-a.sum),maxS=Math.max(1,...ranks.map(r=>r.sum));
   return `<div class="pad" style="display:flex;flex-direction:column;gap:14px;border-bottom:1px solid var(--line)">
    <h2 style="margin:0">新增配息</h2>
-   <div class="row">
+   <div class="row frm">
     <label>發放日<input type="date" data-d="date" value="${esc(f.date)}" class="w-l"></label>
     <label>股票代號<input type="text" inputmode="numeric" data-d="code" placeholder="0050" value="${esc(f.code)}" class="w-s"></label>
     <label>名稱<input type="text" data-d="name" placeholder="自動帶入" value="${esc(f.name)}" class="w-m"></label>
@@ -345,10 +351,20 @@ function dividendsHTML(c){
      <span><span style="display:block;height:18px;width:${(r.sum/maxS*100).toFixed(1)}%;background:#2F7F79;border-radius:0 6px 6px 0"></span><span style="font-size:12px;color:var(--muted)">${r.n} 次</span></span>
      <span class="b" style="text-align:right;font-size:14px">${fmt(r.sum)}</span></div>`).join('')}</div></figure>
   </div>
-  ${years.map(y=>{const yl=list.filter(d=>d.date.startsWith(y)),ys=yl.reduce((a,d)=>a+num(d.amount),0);
+  <div class="bar" style="border-top:1px solid var(--line)"><span class="b">配息明細</span>
+   <button type="button" class="switch" data-act="dedit" aria-pressed="${ui.dedit}"><span class="t" aria-hidden="true"><i></i></span>編輯模式</button></div>
+  ${ui.dedit?'<div class="note"><span>編輯模式：直接修改各欄位，會自動儲存。關閉編輯模式後，合計與圖表會重新計算。</span></div>':''}
+  ${years.map(y=>{const yl=list.filter(d=>String(d.date).startsWith(y)),ys=yl.reduce((a,d)=>a+num(d.amount),0);
    return `<div style="padding:10px 16px;background:var(--soft);border-top:1px solid var(--line);display:flex;justify-content:space-between;font-weight:600"><span>${y} 年</span><span style="font-size:14px">合計 <span style="color:var(--up)">${signed(ys)}</span></span></div>
-   <div class="scroll"><table style="min-width:720px"><thead><tr><th class="l">發放日</th><th class="l">股票</th><th>每股配息</th><th>參與股數</th><th>實領金額</th><th class="l">券商／備註</th><th><span class="sr">操作</span></th></tr></thead><tbody>
-   ${yl.map(d=>`<tr><td style="color:var(--ink2)">${esc(d.date)}</td><td class="l"><button type="button" class="stk" style="min-height:32px;padding:0" data-stock="${esc(String(d.code).trim())}"><span class="b">${esc(d.code)}</span><span style="color:var(--ink2)">${esc(d.name||'')}</span></button></td>
+   <div class="scroll"><table style="min-width:${ui.dedit?'900':'720'}px"><thead><tr><th class="l">發放日</th><th class="l">股票</th><th>每股配息</th><th>參與股數</th><th>實領金額</th><th class="l">券商／備註</th><th><span class="sr">操作</span></th></tr></thead><tbody>
+   ${ui.dedit?yl.map(d=>`<tr class="edit" data-div="${d.id}">
+    <td><input type="date" aria-label="發放日" data-de="date" value="${esc(d.date)}" style="min-width:140px"></td>
+    <td class="l"><div style="display:flex;gap:6px"><input type="text" inputmode="numeric" aria-label="代號" data-de="code" value="${esc(d.code)}" style="width:84px;font-weight:600"><input type="text" aria-label="名稱" data-de="name" value="${esc(d.name||'')}" style="min-width:120px"></div></td>
+    <td><input type="number" inputmode="decimal" step="0.001" aria-label="每股配息" data-de="per" value="${esc(d.per??'')}" style="width:90px;text-align:right"></td>
+    <td><input type="number" inputmode="numeric" aria-label="參與股數" data-de="shares" value="${esc(d.shares??'')}" style="width:100px;text-align:right"></td>
+    <td><input type="number" inputmode="decimal" aria-label="實領金額" data-de="amount" value="${esc(d.amount??'')}" style="width:110px;text-align:right;font-weight:600"></td>
+    <td class="l"><input type="text" aria-label="券商／備註" data-de="broker" list="brokers" value="${esc(d.broker||'')}" style="min-width:130px"></td>
+    <td style="padding:4px 12px"><button type="button" class="del" data-act="ddel" data-id="${d.id}" aria-label="刪除這筆配息">${trash}</button></td></tr>`).join(''):yl.map(d=>`<tr><td style="color:var(--ink2)">${esc(d.date)}</td><td class="l"><button type="button" class="stk" style="min-height:32px;padding:0" data-stock="${esc(String(d.code).trim())}"><span class="b">${esc(d.code)}</span><span style="color:var(--ink2)">${esc(d.name||'')}</span></button></td>
     <td>${d.per!==''&&d.per!=null?esc(d.per):'—'}</td><td>${num(d.shares)?fmt(num(d.shares)):'—'}</td><td class="b" style="color:var(--up)">${signed(num(d.amount))}</td><td class="l" style="color:var(--ink2)">${esc(d.broker||'')}</td>
     <td style="padding:4px 12px"><button type="button" class="del" data-act="ddel" data-id="${d.id}" aria-label="刪除 ${esc(d.date)} ${esc(d.name||d.code)} 的配息">${trash}</button></td></tr>`).join('')}
    </tbody></table></div>`}).join('')}`}`;
@@ -418,7 +434,7 @@ function render(){
    <p class="foot" style="margin-bottom:10px">資料存在這台裝置的瀏覽器裡。換手機、清除瀏覽器資料前，請先匯出備份。</p>
    <div class="tools"><button type="button" class="btn2" data-act="export">匯出備份</button><button type="button" class="btn2" data-act="import">匯入備份</button><button type="button" class="btn2" data-act="wipe" style="color:#A93226">清空所有資料</button></div>
   </section>
-  <p class="foot">賣出若有填「利潤」，已實現損益以你填的數字為準；沒填才用平均成本自動估算。手續費以 0.1425%（最低 NT$20）、證交稅以賣出 0.3% 估算；紅色為獲利、綠色為虧損（台股慣例）。現價自動取自臺灣證券交易所與櫃買中心公開資料（每日收盤價），手動輸入的現價會在下次更新時被覆蓋。</p>`;
+  <p class="foot">賣出若有填「利潤」，已實現損益以你填的數字為準；沒填才用平均成本自動估算。版本 2026-11-18d。手續費以 0.1425%（最低 NT$20）、證交稅以賣出 0.3% 估算；紅色為獲利、綠色為虧損（台股慣例）。現價自動取自臺灣證券交易所與櫃買中心公開資料（每日收盤價），手動輸入的現價會在下次更新時被覆蓋。</p>`;
 }
 
 const app=document.getElementById('app');
@@ -427,7 +443,7 @@ app.addEventListener('click',e=>{
   if(b.dataset.detail){document.getElementById('pldetail').textContent=b.dataset.detail;return}
   if(b.dataset.stock){ui.detail=b.dataset.stock;ui.edit=false;render();const d=document.getElementById('detailPanel');if(d)d.scrollIntoView({behavior:'smooth',block:'start'});return}
   if(b.dataset.act==='back'){ui.detail=null;render();return}
-  if(b.dataset.tab){ui.tab=b.dataset.tab;if(ui.tab==='analysis'||ui.tab==='dividends')ui.edit=false;return render()}
+  if(b.dataset.tab){ui.tab=b.dataset.tab;if(ui.tab==='analysis'||ui.tab==='dividends')ui.edit=false;ui.dedit=false;return render()}
   if(b.dataset.filter){ui.filter=b.dataset.filter;return render()}
   const a=b.dataset.act;
   if(a==='side'){ui.form.side=b.dataset.v;return render()}
@@ -438,6 +454,7 @@ app.addEventListener('click',e=>{
     if(!f.date||!String(f.code).trim()||!(num(f.amount)>0)){ui.derr='請填寫發放日、代號與實領金額（或每股配息＋股數）';return render()}
     data.dividends.push({id:data.nextDivId++,date:f.date,code:String(f.code).trim(),name:f.name||nameOf(f.code)||String(f.code).trim(),per:f.per===''?'':num(f.per),shares:f.shares===''?'':num(f.shares),amount:num(f.amount),broker:f.broker||''});
     ui.dform={date:f.date,code:'',name:'',per:'',shares:'',amount:'',broker:f.broker,sharesTouched:false,amountTouched:false};ui.derr='';data.sample=false;save();return render()}
+  if(a==='dedit'){ui.dedit=!ui.dedit;return render()}
   if(a==='ddel'){if(confirm('確定刪除這筆配息紀錄？')){data.dividends=data.dividends.filter(d=>d.id!==Number(b.dataset.id));save();render()}return}
   if(a==='del'){data.trades=data.trades.filter(t=>t.id!==Number(b.dataset.id));save();return render()}
   if(a==='add'){const f=ui.form;
@@ -464,6 +481,9 @@ app.addEventListener('input',e=>{
     const ok=valid(t),cell=el.closest('tr').querySelector('[data-net]');el.closest('tr').className=ok?'':'incomplete';
     if(cell){const q=num(t.qty),p=num(t.price),f=fee(q,p),x=tax(q,p,t.side);cell.textContent=ok?signed(t.side==='buy'?-(q*p+f):q*p-f-x):'未填完';cell.style.color=ok?'var(--ink)':'#7A7268'}
     if(el.dataset.e==='side')el.className=el.value;return}
+  if(el.dataset.de){const tr=el.closest('tr'),id=Number(tr.dataset.div),d=data.dividends.find(x=>x.id===id);if(!d)return;
+    const k=el.dataset.de;d[k]=(k==='per'||k==='shares'||k==='amount')?(el.value===''?'':num(el.value)):el.value;
+    save();liveUpdate();return}
   if(el.dataset.d){const f=ui.dform,k=el.dataset.d;f[k]=el.value;ui.derr='';
     if(k==='shares')f.sharesTouched=el.value!=='';if(k==='amount')f.amountTouched=el.value!=='';
     const set=(n,v)=>{const i=app.querySelector('[data-d="'+n+'"]');if(i&&document.activeElement!==i)i.value=v};
