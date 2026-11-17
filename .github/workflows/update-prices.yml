@@ -1,0 +1,83 @@
+name: 更新每日收盤價
+
+on:
+  schedule:
+    # 台灣時間週一到週五 14:40、17:10、20:10（UTC 06:40、09:10、12:10）
+    - cron: "40 6 * * 1-5"
+    - cron: "10 9 * * 1-5"
+    - cron: "10 12 * * 1-5"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 下載證交所與櫃買中心收盤價
+        run: |
+          UA="Mozilla/5.0 (stock-record-updater)"
+          curl -fsSL --retry 3 --max-time 60 -A "$UA" https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL -o twse.json || echo "[]" > twse.json
+          curl -fsSL --retry 3 --max-time 60 -A "$UA" https://www.tpex.org.tw/openapi/v1/tpex_mainboard_daily_close_quotes -o tpex.json || echo "[]" > tpex.json
+          curl -fsSL --retry 3 --max-time 60 -A "$UA" https://openapi.twse.com.tw/v1/exchangeReport/MI_INDEX -o index.json || echo "[]" > index.json
+
+      - name: 整理成 prices.json
+        run: |
+          python3 - <<'PY'
+          import json, re, datetime
+          def load(f):
+              try:
+                  d = json.load(open(f, encoding="utf-8"))
+                  return d if isinstance(d, list) else []
+              except Exception:
+                  return []
+          def num(v):
+              try:
+                  n = float(str(v).replace(",", ""))
+                  return n if n > 0 else None
+              except Exception:
+                  return None
+          def roc(d):
+              d = re.sub(r"\D", "", str(d or ""))
+              if len(d) == 7: return f"{int(d[:3])+1911}-{d[3:5]}-{d[5:]}"
+              if len(d) == 8: return f"{d[:4]}-{d[4:6]}-{d[6:]}"
+              return ""
+          prices, date = {}, ""
+          for r in load("twse.json"):
+              p = num(r.get("ClosingPrice"))
+              if p: prices[str(r.get("Code", "")).strip()] = p
+              date = date or roc(r.get("Date"))
+          for r in load("tpex.json"):
+              c = str(r.get("SecuritiesCompanyCode") or r.get("Code") or "").strip()
+              p = num(r.get("Close"))
+              if p and c and c not in prices: prices[c] = p
+              date = date or roc(r.get("Date"))
+          taiex = None
+          for r in load("index.json"):
+              if "發行量加權股價指數" in str(r.get("指數", "")):
+                  sign = -1 if "-" in str(r.get("漲跌", "")) else 1
+                  pts = num(r.get("漲跌點數")) or 0
+                  try: pct = float(r.get("漲跌百分比"))
+                  except Exception: pct = None
+                  taiex = {"close": num(r.get("收盤指數")), "chg": sign * pts, "pct": pct}
+                  date = date or roc(r.get("日期"))
+                  break
+          if not prices:
+              print("沒有取得任何價格，保留舊檔")
+              raise SystemExit(0)
+          out = {"date": date, "updatedAt": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds"),
+                 "count": len(prices), "taiex": taiex, "prices": prices}
+          json.dump(out, open("prices.json", "w", encoding="utf-8"), ensure_ascii=False, separators=(",", ":"))
+          print("寫入", len(prices), "檔價格，日期", date)
+          PY
+          rm -f twse.json tpex.json index.json
+
+      - name: 存回 repository
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add prices.json
+          git diff --cached --quiet || (git commit -m "更新收盤價" && git push)
