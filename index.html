@@ -98,14 +98,15 @@ figcaption{font-size:16px;font-weight:700}
 <script>
 (function(){
 const KEY='my-stock-record-v2',OLDKEY='my-stock-record-v1';
-const INITIAL={nextId:1,prices:{},trades:[]};
+const INITIAL={nextId:1,prices:{},trades:[],dividends:[],nextDivId:1};
 const today=()=>{const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')};
 let data;
 try{data=JSON.parse(localStorage.getItem(KEY))}catch(e){data=null}
 if(!data||!Array.isArray(data.trades)){data=JSON.parse(JSON.stringify(INITIAL));
   try{const old=JSON.parse(localStorage.getItem(OLDKEY));if(old&&!old.sample&&Array.isArray(old.trades)){old.trades.forEach(t=>{t.id=data.nextId++;data.trades.push(t)});Object.assign(data.prices,old.prices||{})}}catch(e){}
   try{localStorage.setItem(KEY,JSON.stringify(data))}catch(e){}}
-const ui={detail:null,tab:'holdings',filter:'all',edit:false,error:'',form:{side:'buy',date:today(),code:'',name:'',qty:'',price:''}};
+if(!Array.isArray(data.dividends))data.dividends=[];if(!data.nextDivId)data.nextDivId=Math.max(0,...data.dividends.map(d=>d.id||0))+1;
+const ui={dform:{date:today(),code:'',name:'',per:'',shares:'',amount:'',broker:'',sharesTouched:false,amountTouched:false},derr:'',detail:null,tab:'holdings',filter:'all',edit:false,error:'',form:{side:'buy',date:today(),code:'',name:'',qty:'',price:''}};
 function save(){try{localStorage.setItem(KEY,JSON.stringify(data))}catch(e){}}
 
 const num=v=>{const n=Number(v);return isFinite(n)?n:0};
@@ -119,6 +120,11 @@ const valid=t=>!!t.date&&!!String(t.code).trim()&&num(t.qty)>0&&num(t.price)>0;
 const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const trash='<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>';
 
+function sharesOn(code,date){let q=0;code=String(code).trim();
+  data.trades.filter(t=>valid(t)&&String(t.code).trim()===code&&t.date<date).sort((a,b)=>a.date.localeCompare(b.date)||a.id-b.id)
+   .forEach(t=>{q=t.side==='buy'?q+num(t.qty):Math.max(0,q-num(t.qty))});return q}
+function nameOf(code){code=String(code).trim();const t=data.trades.find(x=>String(x.code).trim()===code&&x.name)||data.dividends.find(x=>String(x.code).trim()===code&&x.name);return t?t.name:''}
+const divOk=d=>!!d.date&&!!String(d.code).trim()&&num(d.amount)>0;
 function compute(){
   const pos={},monthly={};let realized=0;
   data.trades.filter(valid).sort((a,b)=>a.date.localeCompare(b.date)||a.id-b.id).forEach(t=>{
@@ -132,21 +138,25 @@ function compute(){
       if(!given&&q<q0)p.unknown=true;
       realized+=r;p.realized+=r;const m=t.date.slice(0,7);monthly[m]=(monthly[m]||0)+r;p.cost-=avg*q;p.qty-=q}
   });
-  let value=0,cost=0;
+  const divBy={};let divTotal=0,divYear=0;const y0=today().slice(0,4);
+  data.dividends.filter(divOk).forEach(d=>{const c=String(d.code).trim(),a=num(d.amount);divBy[c]=(divBy[c]||0)+a;divTotal+=a;if(d.date.startsWith(y0))divYear+=a;
+    if(!pos[c])pos[c]={code:c,name:d.name||c,qty:0,cost:0,realized:0,invested:0}});
+  let value=0,cost=0,kCost=0;
   const all=Object.values(pos).map(p=>{const raw=data.prices[p.code],price=num(raw);
     const known=raw!==undefined&&raw!==''&&price>0;
     const v=p.qty>0&&known?p.qty*price:0, un=p.qty>0&&known?v-p.cost:0;
-    if(p.qty>0){value+=v;cost+=p.cost}
-    return Object.assign({},p,{price,known,value:v,un,total:p.realized+un})});
-  return {all,holdings:all.filter(p=>p.qty>0),value,cost,unreal:value-cost,realized,monthly};
+    if(p.qty>0){value+=v;cost+=p.cost;if(known)kCost+=p.cost}
+    const div=divBy[p.code]||0;return Object.assign({},p,{price,known,value:v,un,div,total:p.realized+un+div})});
+  return {all,holdings:all.filter(p=>p.qty>0),value,cost,unreal:value-kCost,kCost,realized,monthly,divTotal,divYear};
 }
 
 function summaryHTML(c){
   return `<section class="cards" aria-label="資產總覽">
   <div class="card"><span class="k">總市值</span><span class="v">NT$ ${fmt(c.value)}</span><span class="s">持有 ${c.holdings.length} 檔</span></div>
   <div class="card"><span class="k">投入成本（含手續費）</span><span class="v">NT$ ${fmt(c.cost)}</span><span class="s">平均成本法計算</span></div>
-  <div class="card"><span class="k">未實現損益</span><span class="v" style="color:${tone(c.unreal)}">${signed(c.unreal)}</span><span class="s b" style="color:${tone(c.unreal)}">${c.cost?pct(c.unreal/c.cost*100):'—'}</span></div>
+  <div class="card"><span class="k">未實現損益</span><span class="v" style="color:${tone(c.unreal)}">${signed(c.unreal)}</span><span class="s b" style="color:${tone(c.unreal)}">${c.kCost?pct(c.unreal/c.kCost*100):'—'}</span></div>
   <div class="card"><span class="k">已實現損益</span><span class="v" style="color:${tone(c.realized)}">${signed(c.realized)}</span><span class="s">已扣手續費與證交稅</span></div>
+  <div class="card"><span class="k">累計配息</span><span class="v" style="color:${tone(c.divTotal)}">${signed(c.divTotal)}</span><span class="s">今年 NT$ ${fmt(c.divYear)}</span></div>
   </section>`;
 }
 
@@ -213,7 +223,8 @@ function tradesHTML(){
 function detailHTML(code,c){
   const p=c.all.find(x=>x.code===code);
   const list=data.trades.filter(t=>valid(t)&&String(t.code).trim()===code).sort((a,b)=>a.date.localeCompare(b.date)||a.id-b.id);
-  if(!p||!list.length)return `<div class="dhead"><button type="button" class="back" data-act="back">‹ 返回</button></div><p class="empty">找不到這檔股票的紀錄。</p>`;
+  const divs=data.dividends.filter(d=>divOk(d)&&String(d.code).trim()===code).sort((a,b)=>a.date.localeCompare(b.date));
+  if(!p||(!list.length&&!divs.length))return `<div class="dhead"><button type="button" class="back" data-act="back">‹ 返回</button></div><p class="empty">找不到這檔股票的紀錄。</p>`;
   let bal=0,avgCost=0,cost=0;const rows=[];
   list.forEach(t=>{const q=num(t.qty),pr=num(t.price),f=fee(q,pr);let real=null;
     if(t.side==='buy'){bal+=q;cost+=q*pr+f}
@@ -227,20 +238,25 @@ function detailHTML(code,c){
   const wins=rows.filter(r=>r.real!=null&&r.real>0).length,closed=rows.filter(r=>r.real!=null).length;
   const tile=(k,v,sub,col)=>`<div class="card"><span class="k">${k}</span><span class="v" style="font-size:19px${col?';color:'+col:''}">${v}</span><span class="s">${sub}</span></div>`;
   const years=[...new Set(rows.map(r=>r.t.date.slice(0,4)))].sort().reverse();
+  const divsHTML=divs.length?`<div style="padding:10px 16px;background:var(--tint);border-top:1px solid var(--line);display:flex;justify-content:space-between;font-weight:600"><span>配息紀錄</span><span style="font-size:14px">合計 <span style="color:${tone(p.div)}">${signed(p.div)}</span></span></div>
+   <div class="scroll"><table style="min-width:600px"><thead><tr><th class="l">發放日</th><th>每股配息</th><th>參與股數</th><th>實領金額</th><th class="l">券商／備註</th></tr></thead><tbody>
+   ${divs.slice().reverse().map(d=>`<tr><td style="color:var(--ink2)">${esc(d.date)}</td><td>${d.per!==''&&d.per!=null?fmt(num(d.per),4).replace(/0+$/,'').replace(/\.$/,''):'—'}</td><td>${num(d.shares)?fmt(num(d.shares)):'—'}</td><td class="b" style="color:var(--up)">${signed(num(d.amount))}</td><td class="l" style="color:var(--ink2)">${esc(d.broker||'')}</td></tr>`).join('')}
+   </tbody></table></div>`:'';
   return `<div class="dhead"><div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"><button type="button" class="back" data-act="back">‹ 返回</button>
     <h2 style="margin:0;font-size:18px">${esc(code)} ${esc(p.name)}</h2></div>
-    <span class="foot">${esc(list[0].date)} 起，共 ${list.length} 筆交易</span></div>
+    <span class="foot">${list.length?esc(list[0].date)+' 起，共 '+list.length+' 筆交易':''}${divs.length?'、'+divs.length+' 筆配息':''}</span></div>
   <div class="pad" style="display:flex;flex-direction:column;gap:16px;background:#FAF7F2">
    <div class="cards">
     ${tile('目前持股',p.qty>0?fmt(p.qty)+' 股':'已出清',p.qty>0?'平均成本 '+fmt(p.cost/p.qty,2):'')}
     ${tile('現價／市值',p.qty>0&&p.known?fmt(p.price,2):'—',p.qty>0&&p.known?'市值 NT$ '+fmt(p.value):(p.qty>0?'等待現價更新':''))}
     ${tile('未實現損益',p.qty>0&&p.known?signed(p.un):'—',p.qty>0&&p.known&&p.cost?pct(p.un/p.cost*100):'',p.qty>0&&p.known?tone(p.un):'')}
     ${tile('已實現損益',signed(p.realized),closed?'賣出 '+closed+' 次，獲利 '+wins+' 次':'尚未賣出',tone(p.realized))}
+    ${tile('累計配息',signed(p.div),divs.length?'共 '+divs.length+' 次':'尚無配息紀錄',tone(p.div))}
    </div>
    <div class="row" style="gap:20px;font-size:14px;color:var(--ink2)">
     <span>累計買進 <b>${fmt(bq)}</b> 股，均價 ${bq?fmt(ba/bq,2):'—'}</span>
     <span>累計賣出 <b>${fmt(sq)}</b> 股，均價 ${sq?fmt(sa/sq,2):'—'}</span>
-    <span>合計損益 <b style="color:${tone(p.total)}">${signed(p.total)}</b></span>
+    <span>合計損益（含配息） <b style="color:${tone(p.total)}">${signed(p.total)}</b></span>
    </div>
   </div>
   ${years.map(y=>{const yr=rows.filter(r=>r.t.date.startsWith(y)).reverse();const yReal=yr.reduce((s,r)=>s+(r.real||0),0);
@@ -250,27 +266,70 @@ function detailHTML(code,c){
     <td>${fmt(r.q)}</td><td>${fmt(r.pr,2)}</td><td>${fmt(r.q*r.pr)}</td>
     <td class="b" style="color:${r.real==null?'var(--ink2)':tone(r.real)}">${r.real==null?'—':signed(r.real)}</td>
     <td>${fmt(r.bal)}</td><td style="color:var(--ink2)">${r.bal?fmt(r.avg,2):'—'}</td><td class="l" style="color:var(--ink2)">${esc(r.t.broker||'')}</td></tr>`).join('')}
-   </tbody></table></div>`}).join('')}`;
+   </tbody></table></div>`}).join('')}
+  ${divsHTML}`;
+}
+
+function dividendsHTML(c){
+  const f=ui.dform;
+  const list=data.dividends.filter(divOk).slice().sort((a,b)=>b.date.localeCompare(a.date)||b.id-a.id);
+  const years=[...new Set(list.map(d=>d.date.slice(0,4)))];
+  const byStock={};list.forEach(d=>{const k=String(d.code).trim();(byStock[k]=byStock[k]||{code:k,name:d.name||nameOf(k),sum:0,n:0});byStock[k].sum+=num(d.amount);byStock[k].n++});
+  const ranks=Object.values(byStock).sort((a,b)=>b.sum-a.sum),maxS=Math.max(1,...ranks.map(r=>r.sum));
+  return `<div class="pad" style="display:flex;flex-direction:column;gap:14px;border-bottom:1px solid var(--line)">
+   <h2 style="margin:0">新增配息</h2>
+   <div class="row">
+    <label>發放日<input type="date" data-d="date" value="${esc(f.date)}" class="w-l"></label>
+    <label>股票代號<input type="text" inputmode="numeric" data-d="code" placeholder="0050" value="${esc(f.code)}" class="w-s"></label>
+    <label>名稱<input type="text" data-d="name" placeholder="自動帶入" value="${esc(f.name)}" class="w-m"></label>
+    <label>每股配息<input type="number" inputmode="decimal" step="0.001" min="0" data-d="per" placeholder="1.2" value="${esc(f.per)}" class="w-m"></label>
+    <label>參與股數<input type="number" inputmode="numeric" min="0" data-d="shares" placeholder="自動帶入" value="${esc(f.shares)}" class="w-m"></label>
+    <label>實領金額<input type="number" inputmode="decimal" min="0" data-d="amount" placeholder="自動試算" value="${esc(f.amount)}" class="w-m"></label>
+    <label>券商／備註<input type="text" data-d="broker" list="brokers" placeholder="國泰證券" value="${esc(f.broker)}" class="w-l"></label>
+    <button type="button" class="btn" data-act="dadd">加入配息</button>
+   </div>
+   <p class="foot" id="dhint">${ui.derr?`<span class="err" role="alert">${esc(ui.derr)}</span>`:'參與股數會依你的交易紀錄，自動帶入發放日前一天的持股數；實領金額＝每股配息×股數。兩者都可以改成存摺上的實際數字（例如扣掉匯費或二代健保補充保費）。'}</p>
+  </div>
+  ${!list.length?'<p class="empty">還沒有配息紀錄。</p>':`
+  <div class="pad" style="display:flex;flex-direction:column;gap:14px;background:var(--bg)">
+   <div class="cards">
+    <div class="card"><span class="k">累計配息</span><span class="v" style="color:var(--up)">${signed(c.divTotal)}</span><span class="s">共 ${list.length} 筆</span></div>
+    <div class="card"><span class="k">今年配息</span><span class="v">NT$ ${fmt(c.divYear)}</span><span class="s">${today().slice(0,4)} 年</span></div>
+    <div class="card"><span class="k">配息最多</span><span class="v" style="font-size:17px">${esc(ranks[0].code+' '+ranks[0].name)}</span><span class="s">NT$ ${fmt(ranks[0].sum)}</span></div>
+   </div>
+   <figure><div class="fh"><figcaption>各股累計配息</figcaption></div>
+    <div style="display:flex;flex-direction:column;gap:10px">${ranks.map(r=>`<div class="wrow"><button type="button" class="stk" style="min-height:32px;padding:0;font-size:14px" data-stock="${esc(r.code)}">${esc(r.code+' '+r.name)}</button>
+     <span><span style="display:block;height:18px;width:${(r.sum/maxS*100).toFixed(1)}%;background:#2F7F79;border-radius:0 6px 6px 0"></span><span style="font-size:12px;color:var(--muted)">${r.n} 次</span></span>
+     <span class="b" style="text-align:right;font-size:14px">${fmt(r.sum)}</span></div>`).join('')}</div></figure>
+  </div>
+  ${years.map(y=>{const yl=list.filter(d=>d.date.startsWith(y)),ys=yl.reduce((a,d)=>a+num(d.amount),0);
+   return `<div style="padding:10px 16px;background:var(--soft);border-top:1px solid var(--line);display:flex;justify-content:space-between;font-weight:600"><span>${y} 年</span><span style="font-size:14px">合計 <span style="color:var(--up)">${signed(ys)}</span></span></div>
+   <div class="scroll"><table style="min-width:720px"><thead><tr><th class="l">發放日</th><th class="l">股票</th><th>每股配息</th><th>參與股數</th><th>實領金額</th><th class="l">券商／備註</th><th><span style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)">操作</span></th></tr></thead><tbody>
+   ${yl.map(d=>`<tr><td style="color:var(--ink2)">${esc(d.date)}</td><td class="l"><button type="button" class="stk" style="min-height:32px;padding:0" data-stock="${esc(String(d.code).trim())}"><span class="b">${esc(d.code)}</span><span style="color:var(--ink2)">${esc(d.name||'')}</span></button></td>
+    <td>${d.per!==''&&d.per!=null?esc(d.per):'—'}</td><td>${num(d.shares)?fmt(num(d.shares)):'—'}</td><td class="b" style="color:var(--up)">${signed(num(d.amount))}</td><td class="l" style="color:var(--ink2)">${esc(d.broker||'')}</td>
+    <td style="padding:4px 12px"><button type="button" class="del" data-act="ddel" data-id="${d.id}" aria-label="刪除 ${esc(d.date)} ${esc(d.name||d.code)} 的配息">${trash}</button></td></tr>`).join('')}
+   </tbody></table></div>`}).join('')}`}`;
 }
 
 function analysisHTML(c){
   const per=c.all.slice().sort((a,b)=>b.total-a.total);
   if(!per.length)return '<p class="empty">還沒有可分析的交易。</p>';
-  const tot=c.realized+c.unreal,inv=per.reduce((a,x)=>a+x.invested,0),win=per.filter(x=>x.total>0).length;
+  const tot=c.realized+c.unreal+c.divTotal,inv=per.reduce((a,x)=>a+x.invested,0),win=per.filter(x=>x.total>0).length;
   const best=per[0],worst=per[per.length-1],maxA=Math.max(1,...per.map(x=>Math.abs(x.total)));
   const open=per.filter(x=>x.qty>0&&x.value>0).sort((a,b)=>b.value-a.value),maxV=Math.max(1,...open.map(x=>x.value));
   const months=Object.keys(c.monthly).sort(),maxM=Math.max(1,...months.map(m=>Math.abs(c.monthly[m])));
   const tile=(k,v,s,col)=>`<div class="card"><span class="k">${k}</span><span class="v" style="font-size:19px${col?';color:'+col:''}">${v}</span><span class="s b"${col?` style="color:${col}"`:''}>${s}</span></div>`;
   return `<div class="pad" style="display:flex;flex-direction:column;gap:16px;background:#FAF7F2">
   <div class="cards">
-   ${tile('總損益（已實現＋未實現）',signed(tot),'總投入報酬率 '+(inv?pct(tot/inv*100):'—'),tone(tot))}
+   ${tile('總損益（含未實現與配息）',signed(tot),'總投入報酬率 '+(inv?pct(tot/inv*100):'—'),tone(tot))}
+   ${tile('累計配息',signed(c.divTotal),'今年 NT$ '+fmt(c.divYear),tone(c.divTotal))}
    ${tile('獲利檔數',win+' / '+per.length,'勝率 '+Math.round(win/per.length*100)+'%')}
    <div class="card"><span class="k">表現最佳</span><span class="v" style="font-size:17px">${esc(best.code+' '+best.name)}</span><span class="s b" style="color:${tone(best.total)}">${signed(best.total)}</span></div>
    <div class="card"><span class="k">表現最差</span><span class="v" style="font-size:17px">${esc(worst.code+' '+worst.name)}</span><span class="s b" style="color:${tone(worst.total)}">${signed(worst.total)}</span></div>
   </div>
   <div class="grid2">
    <figure><div class="fh"><figcaption>各股總損益</figcaption><div class="lg"><span><i class="sw" style="background:var(--up)"></i>獲利</span><span><i class="sw" style="background:var(--down)"></i>虧損</span></div></div>
-    <div>${per.map(x=>{const w=(Math.abs(x.total)/maxA*100).toFixed(1)+'%';const d=`未實現 ${signed(x.un)}　已實現 ${signed(x.realized)}${x.invested?'　報酬率 '+pct(x.total/x.invested*100):''}${x.qty>0?'':'（已出清）'}`;
+    <div>${per.map(x=>{const w=(Math.abs(x.total)/maxA*100).toFixed(1)+'%';const d=`未實現 ${signed(x.un)}　已實現 ${signed(x.realized)}${x.div?'　配息 '+signed(x.div):''}${x.invested?'　報酬率 '+pct(x.total/x.invested*100):''}${x.qty>0?'':'（已出清）'}`;
      return `<div class="plrow" tabindex="0" data-detail="${esc(x.code+' '+x.name+'：'+d)}" aria-label="${esc(x.code+' '+x.name)} 總損益 ${signed(x.total)}，${esc(d)}">
       <span class="n">${esc(x.code+' '+x.name)}</span><span class="neg"><span style="height:18px;width:${x.total<0?w:'0'};background:var(--down);border-radius:4px 0 0 4px"></span></span>
       <span class="pos"><span style="height:18px;width:${x.total>0?w:'0'};background:var(--up);border-radius:0 4px 4px 0"></span></span><span class="v">${signed(x.total)}</span></div>`}).join('')}</div>
@@ -280,7 +339,7 @@ function analysisHTML(c){
      <span><span style="display:block;height:18px;width:${(x.value/maxV*100).toFixed(1)}%;background:#2F7F79;border-radius:0 4px 4px 0"></span><span style="font-size:12px;color:var(--muted)">NT$ ${fmt(x.value)}</span></span>
      <span class="b" style="text-align:right;font-size:14px">${(x.value/c.value*100).toFixed(1)}%</span></div>`).join('')}</div>`:'<p class="foot">填入持股現價後才能計算比重。</p>'}</figure>
   </div>
-  <figure><div class="fh"><figcaption>每月已實現損益</figcaption><span class="foot">已實現 ${signed(c.realized)}　未實現 ${signed(c.unreal)}</span></div>
+  <figure><div class="fh"><figcaption>每月已實現損益</figcaption><span class="foot">已實現 ${signed(c.realized)}　未實現 ${signed(c.unreal)}　配息 ${signed(c.divTotal)}</span></div>
    ${months.length?`<div class="scroll"><div class="months">${months.map(m=>{const v=c.monthly[m],h=Math.max(2,Math.abs(v)/maxM*100).toFixed(1)+'%';
     return `<div class="mcol" role="img" aria-label="${m} 已實現損益 ${signed(v)}"><span class="b" style="height:20px">${signed(v)}</span>
      <span class="h" style="align-items:flex-end"><span style="width:28px;height:${v>0?h:'0'};background:var(--up);border-radius:4px 4px 0 0"></span></span>
@@ -303,13 +362,14 @@ function render(){
    <div class="bar"><div class="tabs" role="tablist">
      <button type="button" role="tab" data-tab="holdings" aria-selected="${t==='holdings'}">目前持股</button>
      <button type="button" role="tab" data-tab="trades" aria-selected="${t==='trades'}">交易紀錄（${data.trades.length}）</button>
+     <button type="button" role="tab" data-tab="dividends" aria-selected="${t==='dividends'}">配息</button>
      <button type="button" role="tab" data-tab="analysis" aria-selected="${t==='analysis'}">損益分析</button></div>
     <div class="row" style="align-items:center">
      ${t==='trades'?['all','buy','sell'].map(f=>`<button type="button" class="pill" data-filter="${f}" aria-pressed="${ui.filter===f}">${{all:'全部',buy:'買進',sell:'賣出'}[f]}</button>`).join(''):''}
-     ${t!=='analysis'?`<button type="button" class="switch" data-act="edit" aria-pressed="${ui.edit}"><span class="t" aria-hidden="true"><i></i></span>記帳模式</button>`:''}
+     ${t==='holdings'||t==='trades'?`<button type="button" class="switch" data-act="edit" aria-pressed="${ui.edit}"><span class="t" aria-hidden="true"><i></i></span>記帳模式</button>`:''}
     </div></div>
-   ${ui.edit&&t!=='analysis'?`<div class="note"><span>記帳模式：直接在表格裡輸入或修改，會自動儲存。未填完的列不會計入。</span>${t==='trades'?'<button type="button" class="btn" data-act="addRow">＋ 新增一列</button>':''}</div>`:''}
-   ${t==='holdings'?holdingsHTML(c):t==='trades'?tradesHTML():analysisHTML(c)}
+   ${ui.edit&&(t==='holdings'||t==='trades')?`<div class="note"><span>記帳模式：直接在表格裡輸入或修改，會自動儲存。未填完的列不會計入。</span>${t==='trades'?'<button type="button" class="btn" data-act="addRow">＋ 新增一列</button>':''}</div>`:''}
+   ${t==='holdings'?holdingsHTML(c):t==='trades'?tradesHTML():t==='dividends'?dividendsHTML(c):analysisHTML(c)}
   </section>
   <section class="panel pad"><h2 style="font-size:15px">資料備份</h2>
    <p class="foot" style="margin-bottom:10px">資料存在這台裝置的瀏覽器裡。換手機、清除瀏覽器資料前，請先匯出備份。</p>
@@ -324,21 +384,26 @@ app.addEventListener('click',e=>{
   if(b.dataset.detail){document.getElementById('pldetail').textContent=b.dataset.detail;return}
   if(b.dataset.stock){ui.detail=b.dataset.stock;ui.edit=false;render();const d=document.getElementById('detailPanel');if(d)d.scrollIntoView({behavior:'smooth',block:'start'});return}
   if(b.dataset.act==='back'){ui.detail=null;render();return}
-  if(b.dataset.tab){ui.tab=b.dataset.tab;if(ui.tab==='analysis')ui.edit=false;return render()}
+  if(b.dataset.tab){ui.tab=b.dataset.tab;if(ui.tab==='analysis'||ui.tab==='dividends')ui.edit=false;return render()}
   if(b.dataset.filter){ui.filter=b.dataset.filter;return render()}
   const a=b.dataset.act;
   if(a==='side'){ui.form.side=b.dataset.v;return render()}
-  if(a==='edit'){ui.edit=!ui.edit;if(ui.edit&&ui.tab==='analysis')ui.tab='trades';return render()}
+  if(a==='edit'){ui.edit=!ui.edit;if(ui.edit&&(ui.tab==='analysis'||ui.tab==='dividends'))ui.tab='trades';return render()}
   if(a==='addRow'){data.trades.push({id:data.nextId++,date:today(),code:'',name:'',side:'buy',qty:'',price:''});ui.filter='all';data.sample=false;save();render();
     const first=app.querySelector('tr[data-row] input[data-e="code"]');if(first)first.focus();return}
+  if(a==='dadd'){const f=ui.dform;
+    if(!f.date||!String(f.code).trim()||!(num(f.amount)>0)){ui.derr='請填寫發放日、代號與實領金額（或每股配息＋股數）';return render()}
+    data.dividends.push({id:data.nextDivId++,date:f.date,code:String(f.code).trim(),name:f.name||nameOf(f.code)||String(f.code).trim(),per:f.per===''?'':num(f.per),shares:f.shares===''?'':num(f.shares),amount:num(f.amount),broker:f.broker||''});
+    ui.dform={date:f.date,code:'',name:'',per:'',shares:'',amount:'',broker:f.broker,sharesTouched:false,amountTouched:false};ui.derr='';data.sample=false;save();return render()}
+  if(a==='ddel'){if(confirm('確定刪除這筆配息紀錄？')){data.dividends=data.dividends.filter(d=>d.id!==Number(b.dataset.id));save();render()}return}
   if(a==='del'){data.trades=data.trades.filter(t=>t.id!==Number(b.dataset.id));save();return render()}
   if(a==='add'){const f=ui.form;
     if(!f.date||!f.code||!(num(f.qty)>0)||!(num(f.price)>0)){ui.error='請填寫日期、代號、股數與成交價';return render()}
     const known=data.trades.find(t=>t.code===f.code);
     data.trades.push({id:data.nextId++,date:f.date,code:f.code.trim(),name:f.name||(known?known.name:f.code),side:f.side,qty:num(f.qty),price:num(f.price),broker:f.broker||''});
     ui.form=Object.assign({},f,{code:'',name:'',qty:'',price:''});ui.error='';ui.tab='trades';data.sample=false;save();return render()}
-  if(a==='clearSample'){data={nextId:1,prices:{},trades:[]};save();return render()}
-  if(a==='wipe'){if(confirm('確定要清空所有紀錄嗎？這個動作無法復原。')){data={nextId:1,prices:{},trades:[]};save();render()}return}
+  if(a==='clearSample'){data={nextId:1,prices:{},trades:[],dividends:[],nextDivId:1};save();return render()}
+  if(a==='wipe'){if(confirm('確定要清空所有紀錄嗎？這個動作無法復原。')){data={nextId:1,prices:{},trades:[],dividends:[],nextDivId:1};save();render()}return}
   if(a==='export'){const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});const u=URL.createObjectURL(blob);
     const l=document.createElement('a');l.href=u;l.download='股票紀錄備份-'+today()+'.json';document.body.appendChild(l);l.click();l.remove();setTimeout(()=>URL.revokeObjectURL(u),1000);return}
   if(a==='import'){document.getElementById('importFile').click()}
@@ -356,13 +421,21 @@ app.addEventListener('input',e=>{
     const ok=valid(t),cell=el.closest('tr').querySelector('[data-net]');el.closest('tr').className=ok?'':'incomplete';
     if(cell){const q=num(t.qty),p=num(t.price),f=fee(q,p),x=tax(q,p,t.side);cell.textContent=ok?signed(t.side==='buy'?-(q*p+f):q*p-f-x):'未填完';cell.style.color=ok?'var(--ink)':'#7A7268'}
     if(el.dataset.e==='side')el.className=el.value;return}
+  if(el.dataset.d){const f=ui.dform,k=el.dataset.d;f[k]=el.value;ui.derr='';
+    if(k==='shares')f.sharesTouched=el.value!=='';if(k==='amount')f.amountTouched=el.value!=='';
+    const set=(n,v)=>{const i=app.querySelector('[data-d="'+n+'"]');if(i&&document.activeElement!==i)i.value=v};
+    if((k==='code'||k==='date')&&String(f.code).trim()){
+      if(!f.name||k==='code'){const nm=nameOf(f.code);if(nm){f.name=nm;set('name',nm)}}
+      if(!f.sharesTouched){const q=sharesOn(f.code,f.date);f.shares=q?String(q):'';set('shares',f.shares)}}
+    if(!f.amountTouched&&k!=='amount'){const a=num(f.per)*num(f.shares);f.amount=a>0?String(Math.round(a)):'';set('amount',f.amount)}
+    return}
   if(el.dataset.price!==undefined){data.prices[el.dataset.price]=el.value;save();liveUpdate()}
 });
 app.addEventListener('change',e=>{if(e.target.dataset.price!==undefined)render()});
 document.getElementById('importFile').addEventListener('change',e=>{
   const f=e.target.files[0];if(!f)return;const r=new FileReader();
   r.onload=()=>{try{const d=JSON.parse(r.result);if(!Array.isArray(d.trades))throw 0;
-    d.prices=d.prices||{};d.nextId=d.nextId||(Math.max(0,...d.trades.map(t=>t.id||0))+1);d.sample=false;data=d;save();render();alert('匯入完成')}
+    d.prices=d.prices||{};d.dividends=Array.isArray(d.dividends)?d.dividends:[];d.nextDivId=d.nextDivId||(Math.max(0,...d.dividends.map(x=>x.id||0))+1);d.nextId=d.nextId||(Math.max(0,...d.trades.map(t=>t.id||0))+1);d.sample=false;data=d;save();render();alert('匯入完成')}
     catch(x){alert('這不是有效的備份檔')}e.target.value=''};
   r.readAsText(f);
 });
